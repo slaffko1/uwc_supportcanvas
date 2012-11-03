@@ -1,0 +1,152 @@
+<!doctype html>
+<!--[if lt IE 7 ]> <html class="no-js ie ie6 ielt7 ielt8" lang="ru"> <![endif]-->
+<!--[if IE 7 ]>    <html class="no-js ie ie7 ielt8" lang="ru"> <![endif]-->
+<!--[if IE 8 ]>    <html class="no-js ie ie8" lang="ru"> <![endif]-->
+<!--[if (gte IE 9)|!(IE)]><!--> <html class="no-js" lang="ru"> <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+
+  <title></title>
+  <meta name="description" content="">
+  <meta name="author" content="">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="css/style.css?v=2">
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="http://ajax.googleapis.com/ajax/libs/jquery/1/jquery.min.js"></script>
+  <script src="js/jqmodal.js"></script>
+  <script>
+  (function($) {
+    $(function() {
+      
+      var socket = io.connect('http://localhost:8080');
+      socket.on('message', function (message) {
+        if(message.support=='support') support_confirm(); //подтверждение запроса поддержки саппортом 
+        else if(message.support=='support_cancel') support_cancel(); //отмена запроса поддержки от клиента
+        if(message.clientchat) receive_chat(message.clientchat); //прием сообщения от клиента
+      });
+      
+      /*Отправка сообщений в чате нажатием Enter или кликом на кнопку*/
+      $('.chat_support .message').keypress(function(e) {
+        if(e.which == 13) {
+          jQuery(this).blur();
+          jQuery('.chat_support .button').focus().click();
+        }
+      });
+      $('.chat_support .button').click(function () {
+        if($(this).siblings('.message').val())
+        socket.emit('message', { me: 'support', clientchat: $(this).siblings('.message').val() });
+        $('.chat_support .chat_body').append('<div class="support">'+$(this).siblings('.message').val()+'</div>');
+        $(this).siblings('.message').val('');
+      });
+      /*отмена реакции при клике на вьюпорт*/
+      $('#viewport').click(function (e) { 
+        return false
+      });
+      
+      /*Определяем клик или выделение области на вьпорте и отправка координат клиенту*/
+      $('#viewport').mousedown(function(e1){
+        mouseDown = e1;
+        mouse_start =  new Date();
+        return false;
+      }).mouseup(function(e2){
+        mouseUp = e2;
+        mouseUp_y = e2.pageY;
+        mouse_end =  new Date();
+        len = parseInt(Math.sqrt(Math.pow(mouseDown.pageX-mouseUp.pageX,2)+Math.pow(mouseDown.pageY-mouseUp.pageY,2)));
+        period = mouse_end-mouse_start;
+        if(len<10 && period<500) {
+          /*
+           если разница координат между нажатием и отпучканем кнопки мыши меньше 10 пикселов и
+          и время меньше чем полсекунды - отправляем информацию о клике.
+          если время клика больше чем полсекунды то ничего не отправляем(отмена клика)
+          */
+          send_click(mouseDown);
+        } else if(len>10) {
+          /*
+           если разница координат между нажатием и отпучканем кнопки мыши больше 10 пикселов
+           отправляем информацию о выделении
+          */
+          send_selection(mouseDown, mouseUp);
+        }
+        return false;
+      });
+      
+      /*Функция подтверждения чата саппортом*/
+      function support_confirm() {
+        $('#confirm_window').jqm({modal: true}).jqmShow();
+        $('#confirm_window input[type="submit"]').click(function () { 
+          socket.emit('message', { me: 'support', confirm:'confirm' });
+          $('#confirm_window').jqmHide();
+        });
+        $('#confirm_window input[type="reset"]').click(function () { 
+          socket.emit('message', { me: 'support', confirm:'cancel' });
+          $('#confirm_window').jqmHide();
+        });
+        socket.on('message', function (message) {
+          $('#viewport').html(message.clienthtml);
+          $('#viewport').find('.support_link').remove();
+          $('#viewport').find('#support').remove();
+        })
+      }
+      /*Функция отмены чата саппортом*/
+      function support_cancel() {
+        $('#confirm_window').jqm().jqmHide();
+        $('#cancel_window').jqm({modal: true}).jqmShow();
+        $('#viewport').html('');
+      }
+      /*Функция приема сообщения от клиента*/
+      function receive_chat(message) {
+        $('.chat_body').append('<div class="client">'+message+'</div>');
+      }
+      /*Функция отправки координат клика*/
+      function send_click(mouseDown) {
+        var offset = $('#viewport').offset();
+        var scrllTop = $('#viewport').scrollTop();
+        socket.emit('message', { me: 'support', clickX:mouseDown.pageX-offset.left, clickY:mouseDown.pageY-offset.top+scrllTop });
+      }
+      /*Функция отправки координат области выделения*/
+      function send_selection(mouseDown, mouseUp) {
+        var offset = $('#viewport').offset();
+        socket.emit('message', { me: 'support',
+                    selection_start:{x:mouseDown.pageX-offset.left, y:mouseDown.pageY-offset.top},
+                    selection_end:{x:mouseUp.pageX-offset.left, y:mouseUp.pageY-offset.top} });
+      }
+    
+    });
+  })(jQuery);
+
+</script>
+  
+
+</head>
+
+<body>
+<div id="support_wrapper" class="width">
+
+		<div id="viewport"></div><!-- #viewport-->
+    <div class="chat_support clearfix">
+      <div class="chat_body">
+        
+      </div>
+      <div class="chat_form">
+        <textarea placeholder="Введите сообщение" class="message inputbox"></textarea>
+        <input type="submit" value="Отправить" class="button" />
+      </div>
+    </div>
+   
+		
+</div><!-- #wrapper -->
+
+<div id="confirm_window" class="jqmWindow">
+  <p>Запрос поддержки</p>
+  <input type="submit" value="Принять" class="button" />
+  <input type="reset" value="Отмена" class="button" />
+</div>
+<div id="cancel_window" class="jqmWindow">
+  <p>Пользователь отменил запрос поддержки</p>
+  <input type="submit" value="OK" class="button jqmClose" />
+</div>
+
+</body>
+</html>
